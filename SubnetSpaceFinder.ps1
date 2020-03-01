@@ -110,28 +110,39 @@ if (!(get-azcontext)) {
 $date = get-date
     try{
         Login-AzAccount -ErrorAction Stop
+        Write-Output "Failed Login"
 
 
 
     }catch{
-        $errorout = $_.Exception.Message
+        Write-Output $_.Exception.Message
+        
     }
 
 }
 
 Try {
-$context = Set-AzContext -subscriptionname $SubscriptionName
+Set-AzContext -subscriptionname $SubscriptionName -ErrorAction Stop
 
 }catch{
-write-host $_.Exception.Message`n
-}
-$vnet = Get-AzVirtualNetwork -Name $vnetname
+write-output $_.Exception.message
+write-output "Subscription Provided: $SubscriptionName"
 
+}
+
+
+$vnet = Get-AzVirtualNetwork -Name $vnetname 
+if (!($vnet)) {
+Write-Output "VNet Name is invalid or does not exist in $SubscriptionName"
+Write-Output "VNet provided: $VNetName"
+}
 
 $availableips = @()
 $usedips = @()
 $sublist = @()
-Write-Host $SubscriptionName $VnetName
+
+try {
+
 Foreach ($addspace in $vnet.AddressSpace.AddressPrefixes){
 $subnets = ""
 #get the address space and calculate the total available ip's for the space
@@ -166,23 +177,25 @@ if ($subnet) {
 
 
 }
+}
+Catch{
+Write-Output $_.Exception.Message
+}
 
 
 #then do the same thing for each subnet, add their ip's to the $usedips variable
-
+try {
 $allocatedsubs = ($vnet.subnets).addressprefix
 foreach ($allocatedsub in $allocatedsubs) {
 
 $submask = $allocatedsub.split('/')[1]
 
-#pause
 
 
 
 if ($submask -ge 24) {
-#Write-Host "Small Range"
-#pause
 
+    #if the subnet mask is 24 or higher
     #do regular small range math
 
 
@@ -205,43 +218,44 @@ if ($submask -ge 24) {
             $usedips = $usedips + $ip
             
             }
-#$usedips.Count
-#pause
+
 }
 else {
-#do big range math
-#Write-Host "Big Range" 
-#pause
-$subns = @()
-    $subrange = [MATH]::Pow(2,(32 - $submask))
+    #do big range math
+    #Write-Host "Big Range" 
+    #pause
+    $subns = @()
 
-    $24s = $subrange / 256
+        $subrange = [MATH]::Pow(2,(32 - $submask))
 
-  #get the first 3 octets from the address space
-
-    [int]$baseoct = ($allocatedsub.Split('.')[2])
-
-    $snfirst2 = ($allocatedsub.Split('.') | select -Index 0,1) -join "."
+        $24s = $subrange / 256
 
 
-   #use the first 2 octets from the address space and then count up by the amount of possible /24s starting at baseoct to create a list of possible subnets within the address space.
+        #get the first 3 octets from the address space
 
-        for ($i=0; $i -lt $24s; $i++) {
-        [array]$subns += $snfirst2+"."+($baseoct + $i)
-        #$subns
-        }
+        [int]$baseoct = ($allocatedsub.Split('.')[2])
 
-        foreach ($subsub in $subns) { 
-        #$subsub
-            for ($i = 0; $i -lt 256; $i ++) {
-                [string]$ip = $subsub+"."+$i
-                $usedips = $usedips + $ip
+        $snfirst2 = ($allocatedsub.Split('.') | select -Index 0,1) -join "."
+
+
+        #use the first 2 octets from the address space and then count up by the amount of possible /24s starting at baseoct to create a list of possible subnets within the address space.
+
+            for ($i=0; $i -lt $24s; $i++) {
+            [array]$subns += $snfirst2+"."+($baseoct + $i)
+            #$subns
+            }
+
+            foreach ($subsub in $subns) { 
+            #$subsub
+                for ($i = 0; $i -lt 256; $i ++) {
+                    [string]$ip = $subsub+"."+$i
+                    $usedips = $usedips + $ip
                 
-                }
-        #$usedips.Count
-        #pause
-        $sublist += $subsub
-        }
+                    }
+            #$usedips.Count
+            #pause
+            $sublist += $subsub
+            }
 
 
 
@@ -275,3 +289,7 @@ foreach ($sublet in $sublist) {
 }
 
 Write-Output $results
+}
+catch {
+writ-output $_.Exception.message
+}
