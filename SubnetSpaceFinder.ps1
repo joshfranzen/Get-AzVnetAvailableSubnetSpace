@@ -66,9 +66,9 @@ function Convert-ToNumberRange {
 
                 # If the current number minus the last number is not exactly 1, then the range has split
 
-                # (so we have a non-contiguous series of numbers like 1,2,3,12,13,14….)
+                # (so we have a non-contiguous series of numbers like 1,2,3,12,13,14â€¦.)
 
-                if (($numberseries[$index] – $numberseries[$index – 1]) -ne 1) {
+                if (($numberseries[$index] â€“ $numberseries[$index â€“ 1]) -ne 1) {
 
                     New-Object psobject -Property @{
 
@@ -98,7 +98,7 @@ function Convert-ToNumberRange {
 
             'Begin' = $start
 
-            'End' = $numberseries[$index – 1]
+            'End' = $numberseries[$index â€“ 1]
 
         }
 
@@ -106,9 +106,27 @@ function Convert-ToNumberRange {
 
 }
 #==============Rest of the script=============================
+if (!(get-azcontext)) {
+$date = get-date
+    try{
+        Login-AzAccount -ErrorAction Stop
+
+
+
+    }catch{
+        $errorout = $_.Exception.Message
+    }
+
+}
+
+Try {
 $context = Set-AzContext -subscriptionname $SubscriptionName
 
+}catch{
+write-host $_.Exception.Message`n
+}
 $vnet = Get-AzVirtualNetwork -Name $vnetname
+
 
 $availableips = @()
 $usedips = @()
@@ -148,6 +166,7 @@ if ($subnet) {
 
 
 }
+
 
 #then do the same thing for each subnet, add their ip's to the $usedips variable
 
@@ -236,19 +255,23 @@ $availableips = compare $usedips $availableips -passthru
 
 $sublist = $availableips | foreach {($_.split('.') | select -Index 0,1,2)  -join "." } | select -Unique
 
-
+$results = @()
 foreach ($sublet in $sublist) {
-    
-   
-$subletips = ($availableips -match $sublet | foreach {$_.split('.')[3]})
+    $subletips = ($availableips -match $sublet | foreach {$_.split('.')[3]})
 
-if ($subletips) {
-$availableranges = $subletips | Convert-ToNumberRange
+    if ($subletips) {
+    $availableranges = $subletips | Convert-ToNumberRange
 
-foreach ($range in $availableranges) {
-$start = $range.begin
-$actualips = $range.End - $range.Begin
-write-host $actualips IPs available starting at $sublet"."$start
+    foreach ($range in $availableranges) {
+        $start = $range.begin
+        $actualips = $range.End - $range.Begin
+        [array]$results += "$actualips IPs available starting at $subnet`.$start"
+        
+        #Add-Content -Path C:\Users\Melinda\Documents\log.txt -value "$results"
+        
+            
+        }
+    }
 }
-}
-}
+
+Write-Output $results
