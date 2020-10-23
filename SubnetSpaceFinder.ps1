@@ -1,6 +1,8 @@
 param (
     [parameter(Mandatory=$true)][string]$SubscriptionName,
-    [parameter(Mandatory=$true)][string]$VnetName
+    [parameter(Mandatory=$true)][string]$VnetName,
+    [parameter(Mandatory=$false)][string]$SubnetSize
+
 )
 
 #=================function for ip range calculation===========
@@ -30,7 +32,7 @@ function Convert-ToNumberRange {
 
     end {
 
-        $numberseries = @($numberseries | Sort | Select -Unique)
+        $numberseries = @($numberseries | Sort-Object | Select-Object -Unique)
 
         $index = 1
 
@@ -68,7 +70,7 @@ function Convert-ToNumberRange {
 
                 # (so we have a non-contiguous series of numbers like 1,2,3,12,13,14….)
 
-                if (($numberseries[$index] – $numberseries[$index – 1]) -ne 1) {
+                if (($numberseries[$index] - $numberseries[$index - 1]) -ne 1) {
 
                     New-Object psobject -Property @{
 
@@ -98,7 +100,7 @@ function Convert-ToNumberRange {
 
             'Begin' = $start
 
-            'End' = $numberseries[$index – 1]
+            'End' = $numberseries[$index - 1]
 
         }
 
@@ -106,32 +108,15 @@ function Convert-ToNumberRange {
 
 }
 #==============Rest of the script=============================
-if (!(get-azcontext)) {
-$date = get-date
-    try{
-        Login-AzAccount -ErrorAction Stop
-
-
-
-    }catch{
-        $errorout = $_.Exception.Message
-    }
-
-}
-
-Try {
 $context = Set-AzContext -subscriptionname $SubscriptionName
 
-}catch{
-write-host $_.Exception.Message`n
-}
 $vnet = Get-AzVirtualNetwork -Name $vnetname
-
 
 $availableips = @()
 $usedips = @()
 $sublist = @()
-Write-Host $SubscriptionName $VnetName
+$subnetoutput = @()
+#Write-Host $SubscriptionName $VnetName
 Foreach ($addspace in $vnet.AddressSpace.AddressPrefixes){
 $subnets = ""
 #get the address space and calculate the total available ip's for the space
@@ -143,7 +128,7 @@ $24s = $addspacerange / 256
 
 #get the first 3 octets from the address space
 [int]$baseoct = ($addspace.Split('.')[2])
-$snfirst2 = ($addspace.Split('.') | select -Index 0,1) -join "."
+$snfirst2 = ($addspace.Split('.') | Select-Object -Index 0,1) -join "."
 
 
 #use the first 2 octets from the address space and then count up by the amount of possible /24s starting at baseoct to create a list of possible subnets within the address space.
@@ -166,7 +151,6 @@ if ($subnet) {
 
 
 }
-
 
 #then do the same thing for each subnet, add their ip's to the $usedips variable
 
@@ -191,13 +175,13 @@ if ($submask -ge 24) {
 
     [int]$baseoct = ($allocatedsub.Split('.')[2])
 
-    $snfirst2 = ($allocatedsub.Split('.') | select -Index 0,1) -join "."
+    $snfirst2 = ($allocatedsub.Split('.') | Select-Object -Index 0,1) -join "."
 
     $subsub = $snfirst2+"."+$baseoct
     $sublist += $subsub
 
     #get the first IP address and then add the ips used from above
-    [int]$startip = $allocatedsub.Split('./')[3]
+    [int]$startip = ($allocatedsub -split {$_ -eq "." -or $_ -eq "/"})[3]
     [int]$endip = $startip + $subnetrange
 
         for ($i = $startip; $i -lt $endip; $i ++) {
@@ -221,7 +205,7 @@ $subns = @()
 
     [int]$baseoct = ($allocatedsub.Split('.')[2])
 
-    $snfirst2 = ($allocatedsub.Split('.') | select -Index 0,1) -join "."
+    $snfirst2 = ($allocatedsub.Split('.') | Select-Object -Index 0,1) -join "."
 
 
    #use the first 2 octets from the address space and then count up by the amount of possible /24s starting at baseoct to create a list of possible subnets within the address space.
@@ -250,28 +234,64 @@ $subns = @()
 }
 
 
-$availableips = compare $usedips $availableips -passthru 
+$availableips = compare-Object $usedips $availableips -passthru 
 
 
-$sublist = $availableips | foreach {($_.split('.') | select -Index 0,1,2)  -join "." } | select -Unique
+$sublist = $availableips | foreach-Object {($_.split('.') | Select-Object -Index 0,1,2)  -join "." } | Select-Object -Unique
 
-$results = @()
+
 foreach ($sublet in $sublist) {
-    $subletips = ($availableips -match $sublet | foreach {$_.split('.')[3]})
+    
+   
+$subletips = ($availableips -match $sublet | foreach-Object {$_.split('.')[3]})
 
-    if ($subletips) {
-    $availableranges = $subletips | Convert-ToNumberRange
+if ($subletips) {
+$availableranges = $subletips | Convert-ToNumberRange
 
-    foreach ($range in $availableranges) {
-        $start = $range.begin
-        $actualips = $range.End - $range.Begin
-        [array]$results += "$actualips IPs available starting at $subnet`.$start"
-        
-        #Add-Content -Path C:\Users\Melinda\Documents\log.txt -value "$results"
-        
-            
-        }
-    }
+foreach ($range in $availableranges) {
+$start = $range.begin
+$actualips = $range.End - $range.Begin
+$maxsubnetsize = 31 - ([MATH]::Floor([MATH]::log($actualips,2)))
+
+
+[Array]$subnetoutput += New-Object psobject -Property @{
+'IPCount' = $actualips + 1
+'MaxSubnetSize' = $maxsubnetsize
+'StartIP' = $start
+'EndIP' = $start + $actualips 
+'PreFix' = $sublet
+}
+}
+}
 }
 
-Write-Output $results
+if ($SubnetSize) {
+    $multiple = 256 / [MATH]::Pow(2,(32 - $subnetsize)) 
+  
+
+    $increment = 256 / $multiple
+
+    #get valid ranges
+    $validrange = $subnetoutput | Where-Object {($_.IPCount -ge $increment)} | Select-Object -First 1
+
+    #set the first ip, then concat prefix with first ip
+
+    for ($i = 0; $i -le $multiple; $i++) {
+     $firstip = $i * $increment
+     #write-host $firstip
+     #pause
+     if (($firstip -ge $validrange.StartIP) -and (($firstip + $increment - 1) -le ($validrange.EndIP))) {
+        $validsubnet = $validrange.PreFix+"."+$firstip+"/"+$SubnetSize
+        Write-Output $validsubnet
+        return
+     }
+
+    }
+    
+}
+else {
+    $subnetoutput
+}
+
+
+
