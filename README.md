@@ -22,3 +22,5 @@ which chould return an output of any unused gaps in the IP space:
     PreFix    MaxSubnetSize EndIP StartIP IPCount
     ------    ------------- ----- ------- -------
     10.251.38            25   255      16     240
+
+
