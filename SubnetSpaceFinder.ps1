@@ -1,7 +1,8 @@
 param (
     [parameter(Mandatory=$true)][string]$SubscriptionName,
     [parameter(Mandatory=$true)][string]$VnetName,
-    [parameter(Mandatory=$false)][string]$SubnetSize
+    [parameter(Mandatory=$false)][string]$SubnetSize,
+    [parameter(Mandatory=$false)][int]$count = 1
 
 )
 
@@ -251,10 +252,10 @@ $availableranges = $subletips | Convert-ToNumberRange
 foreach ($range in $availableranges) {
 $start = $range.begin
 $actualips = $range.End - $range.Begin
-$maxsubnetsize = 31 - ([MATH]::Floor([MATH]::log($actualips,2)))
+$maxsubnetsize = 32 - ([MATH]::Floor([MATH]::log($actualips,2)))
 
 
-[Array]$subnetoutput += New-Object psobject -Property @{
+$subnetoutput += New-Object psobject -Property @{
 'IPCount' = $actualips + 1
 'MaxSubnetSize' = $maxsubnetsize
 'StartIP' = $start
@@ -272,7 +273,7 @@ if ($SubnetSize) {
     $increment = 256 / $multiple
 
     #get valid ranges
-    $validrange = $subnetoutput | Where-Object {($_.IPCount -ge $increment)} | Select-Object -First 1
+    $validrange = ($subnetoutput | Where-Object {($_.IPCount -ge $increment)})[$count - 1]
 
     #set the first ip, then concat prefix with first ip
 
@@ -281,8 +282,10 @@ if ($SubnetSize) {
      #write-host $firstip
      #pause
      if (($firstip -ge $validrange.StartIP) -and (($firstip + $increment - 1) -le ($validrange.EndIP))) {
-        $validsubnet = $validrange.PreFix+"."+$firstip+"/"+$SubnetSize
-        Write-Output $validsubnet
+        $validsubnet = New-Object psobject -Property @{
+            'cidr' = $validrange.PreFix+"."+$firstip+"/"+$SubnetSize
+            }
+        $validsubnet 
         return
      }
 
@@ -290,8 +293,5 @@ if ($SubnetSize) {
     
 }
 else {
-    $subnetoutput
+    $subnetoutput | ft
 }
-
-
-
